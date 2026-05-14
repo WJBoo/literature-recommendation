@@ -133,8 +133,19 @@ async def sync_processed_corpus(
     work_records = read_jsonl(works_path)
     excerpt_records = read_jsonl(excerpts_path)
 
+    pruned_excerpts = 0
+    pruned_works = 0
     if settings.database_url.startswith("postgresql"):
         works_by_external_id = await upsert_work_records(work_records, batch_size=batch_size)
+        if prune:
+            pruned_excerpts, pruned_works = await prune_missing_records(
+                valid_work_external_ids={record["id"] for record in work_records},
+                valid_excerpt_external_ids={record["id"] for record in excerpt_records},
+            )
+            print(
+                f"Pruned {pruned_works} obsolete works and {pruned_excerpts} obsolete excerpts.",
+                flush=True,
+            )
         synced_excerpts = await upsert_excerpt_records(
             excerpt_records,
             works_by_external_id=works_by_external_id,
@@ -153,9 +164,7 @@ async def sync_processed_corpus(
             await upsert_excerpt(record, work)
             synced_excerpts += 1
 
-    pruned_excerpts = 0
-    pruned_works = 0
-    if prune:
+    if prune and not settings.database_url.startswith("postgresql"):
         pruned_excerpts, pruned_works = await prune_missing_records(
             valid_work_external_ids={record["id"] for record in work_records},
             valid_excerpt_external_ids={record["id"] for record in excerpt_records},
@@ -224,61 +233,69 @@ async def upsert_excerpt_records(
     total = len(records)
     async with async_session() as session:
         for batch_start, batch in batched(records, batch_size):
-            values = []
-            for record in batch:
-                work_id = works_by_external_id.get(record["work_id"])
-                if work_id is None:
-                    raise ValueError(f"Excerpt references unknown work_id: {record['work_id']}")
-                values.append(excerpt_values(record, work_id=work_id))
+            try:
+                values = []
+                for record in batch:
+                    work_id = works_by_external_id.get(record["work_id"])
+                    if work_id is None:
+                        raise ValueError(f"Excerpt references unknown work_id: {record['work_id']}")
+                    values.append(excerpt_values(record, work_id=work_id))
 
-            statement = pg_insert(Excerpt).values(values)
-            update_columns = {
-                "work_id": statement.excluded.work_id,
-                "excerpt_index": statement.excluded.excerpt_index,
-                "title": statement.excluded.title,
-                "text": statement.excluded.text,
-                "chunk_type": statement.excluded.chunk_type,
-                "word_count": statement.excluded.word_count,
-                "start_offset": statement.excluded.start_offset,
-                "end_offset": statement.excluded.end_offset,
-                "embedding_model": statement.excluded.embedding_model,
-                "source_metadata": statement.excluded.source_metadata,
-                "updated_at": func.now(),
-            }
-            result = await session.execute(
-                statement.on_conflict_do_update(
-                    index_elements=[Excerpt.external_id],
-                    set_=update_columns,
-                ).returning(Excerpt.external_id, Excerpt.id)
-            )
-            excerpt_ids_by_external_id = {
-                str(external_id): int(excerpt_id) for external_id, excerpt_id in result.all()
-            }
+                statement = pg_insert(Excerpt).values(values)
+                update_columns = {
+                    "external_id": statement.excluded.external_id,
+                    "title": statement.excluded.title,
+                    "text": statement.excluded.text,
+                    "chunk_type": statement.excluded.chunk_type,
+                    "word_count": statement.excluded.word_count,
+                    "start_offset": statement.excluded.start_offset,
+                    "end_offset": statement.excluded.end_offset,
+                    "embedding_model": statement.excluded.embedding_model,
+                    "source_metadata": statement.excluded.source_metadata,
+                    "updated_at": func.now(),
+                }
+                result = await session.execute(
+                    statement.on_conflict_do_update(
+                        index_elements=[Excerpt.work_id, Excerpt.excerpt_index],
+                        set_=update_columns,
+                    ).returning(Excerpt.external_id, Excerpt.id)
+                )
+                excerpt_ids_by_external_id = {
+                    str(external_id): int(excerpt_id) for external_id, excerpt_id in result.all()
+                }
 
-            excerpt_ids = list(excerpt_ids_by_external_id.values())
-            if excerpt_ids:
-                await session.execute(
-                    delete(ExcerptClassification).where(
-                        ExcerptClassification.excerpt_id.in_(excerpt_ids)
+                excerpt_ids = list(excerpt_ids_by_external_id.values())
+                if excerpt_ids:
+                    await session.execute(
+                        delete(ExcerptClassification).where(
+                            ExcerptClassification.excerpt_id.in_(excerpt_ids)
+                        )
                     )
-                )
 
-            classification_values = classification_records(batch, excerpt_ids_by_external_id)
-            for classification_batch in chunked(classification_values, 5_000):
-                classification_statement = pg_insert(ExcerptClassification).values(
-                    classification_batch
-                )
-                await session.execute(
-                    classification_statement.on_conflict_do_nothing(
-                        index_elements=[
-                            ExcerptClassification.excerpt_id,
-                            ExcerptClassification.label_type,
-                            ExcerptClassification.label,
-                        ]
+                classification_values = classification_records(batch, excerpt_ids_by_external_id)
+                for classification_batch in chunked(classification_values, 3_000):
+                    classification_statement = pg_insert(ExcerptClassification).values(
+                        classification_batch
                     )
-                )
+                    await session.execute(
+                        classification_statement.on_conflict_do_nothing(
+                            index_elements=[
+                                ExcerptClassification.excerpt_id,
+                                ExcerptClassification.label_type,
+                                ExcerptClassification.label,
+                            ]
+                        )
+                    )
 
-            await session.commit()
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                print(
+                    "Failed while syncing excerpts "
+                    f"{batch_start + 1}-{min(batch_start + len(batch), total)}.",
+                    flush=True,
+                )
+                raise
             synced_excerpts += len(batch)
             print(
                 f"Synced excerpts {min(batch_start + len(batch), total)}/{total}.",
