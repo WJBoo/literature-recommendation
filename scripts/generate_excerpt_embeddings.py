@@ -194,9 +194,12 @@ async def write_embeddings_to_database(records: list[dict[str, Any]]) -> dict[st
 
 async def load_database_excerpt_external_ids() -> set[str]:
     await init_database()
-    async with async_session() as session:
-        result = await session.execute(select(Excerpt.external_id))
-        return {str(external_id) for external_id in result.scalars().all()}
+    try:
+        async with async_session() as session:
+            result = await session.execute(select(Excerpt.external_id))
+            return {str(external_id) for external_id in result.scalars().all()}
+    finally:
+        await engine.dispose()
 
 
 def main() -> None:
