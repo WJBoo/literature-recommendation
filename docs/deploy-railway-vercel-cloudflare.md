@@ -76,6 +76,16 @@ railway run backend/.venv/bin/python scripts/check_deployment_readiness.py
 
 That pushes the current local corpus and vectors into the Railway database. The deployed API can then use pgvector without needing the local JSONL artifacts in the image.
 
+For a small beta database, seed a limited diverse subset instead. This keeps one excerpt from many works, clears any partial failed seed first, and only writes embeddings for excerpts that are actually in the database:
+
+```bash
+backend/.venv/bin/python scripts/sync_processed_corpus_to_db.py --reset-gutenberg --prune --max-excerpts 1000 --batch-size 100
+backend/.venv/bin/python scripts/generate_excerpt_embeddings.py --provider hashing --write-db --only-db-excerpts --output-path data/processed/deploy_subset_embeddings.jsonl --batch-size 128
+backend/.venv/bin/python scripts/check_deployment_readiness.py
+```
+
+The full 50k-excerpt corpus plus 1536-dimensional vectors needs a larger Postgres volume. If Railway reports `DiskFullError`, either upgrade/resize the Postgres service or use the limited seed for testing.
+
 ## 3. Vercel Frontend
 
 In Vercel:
