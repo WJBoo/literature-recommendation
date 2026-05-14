@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { AccountTopNav } from "./AccountTopNav";
 
 const navItems = [
   { href: "/", label: "Discover", icon: BookOpen },
@@ -41,7 +42,12 @@ export function AppShell({ children }: { children: ReactNode }) {
           })}
         </nav>
       </aside>
-      <main className="main">{children}</main>
+      <main className="main">
+        <div className="app-account-bar" aria-label="Account controls">
+          <AccountTopNav />
+        </div>
+        {children}
+      </main>
     </div>
   );
 }

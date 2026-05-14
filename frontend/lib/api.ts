@@ -993,6 +993,7 @@ export function clearAccountSession(): void {
   }
   window.localStorage.removeItem("literature_account_token");
   window.localStorage.removeItem("literature_account_user");
+  notifyAccountSessionChanged();
 }
 
 function getAnonymousUserId(): string {
@@ -1027,6 +1028,14 @@ function saveAccountUser(user: AccountUser): void {
     return;
   }
   window.localStorage.setItem("literature_account_user", JSON.stringify(user));
+  notifyAccountSessionChanged();
+}
+
+function notifyAccountSessionChanged(): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.dispatchEvent(new Event("literature-account-session"));
 }
 
 async function readApiError(response: Response, fallback: string): Promise<string> {

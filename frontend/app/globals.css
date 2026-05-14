@@ -90,6 +90,28 @@ label {
   padding: 28px 32px 150px;
 }
 
+.app-account-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 18px;
+}
+
+.account-topnav {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.account-profile-button span {
+  display: inline-block;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .topbar {
   display: flex;
   justify-content: space-between;
@@ -2397,6 +2419,20 @@ h3 {
 
   .main {
     padding: 22px 18px 170px;
+  }
+
+  .app-account-bar {
+    justify-content: flex-start;
+  }
+
+  .account-topnav,
+  .account-signin-button {
+    width: 100%;
+  }
+
+  .account-topnav .secondary-button {
+    flex: 1 1 150px;
+    justify-content: center;
   }
 
   h1 {
