@@ -77,14 +77,17 @@ export default async function WorkPage({
           <p className="eyebrow">{item.form}</p>
           <div className="reader-title-row">
             <h1>{item.title}</h1>
-            <AuthorFollowButton authorId={writerId} initialFollowed={false} />
+            <aside className="reader-writer-follow" aria-label="Writer">
+              <span className="reader-writer-label">Writer</span>
+              <Link className="reader-writer-name text-link" href={`/authors/${writerId}`}>
+                {item.author}
+              </Link>
+              <AuthorFollowButton authorId={writerId} initialFollowed={false} />
+            </aside>
           </div>
           <p className="muted">
             {partByline ? `${partByline} · ` : workByline}
-            <Link className="text-link" href={`/authors/${writerId}`}>
-              {item.author}
-            </Link>{" "}
-            · {item.word_count} words
+            {item.word_count} words
           </p>
         </header>
         {item.media?.length ? <ReaderMedia media={item.media} /> : null}

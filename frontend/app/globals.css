@@ -1157,6 +1157,40 @@ h3 {
   padding-top: 4px;
 }
 
+.reader-writer-follow {
+  display: grid;
+  gap: 6px;
+  justify-items: end;
+  max-width: 250px;
+  min-width: 190px;
+  text-align: right;
+}
+
+.reader-writer-label {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.reader-writer-name {
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 1.25;
+}
+
+.reader-writer-follow .author-follow-control {
+  justify-content: flex-end;
+  padding-top: 0;
+}
+
+.reader-writer-follow .author-follow-control .muted {
+  font-size: 12px;
+  margin: 0;
+}
+
 .reader-action-cluster {
   display: inline-flex;
   position: relative;
@@ -1422,7 +1456,6 @@ h3 {
   padding: 12px 14px;
   position: absolute;
   top: calc(100% + 10px);
-  transform: rotate(-1.4deg);
   white-space: normal;
   z-index: 30;
 }
@@ -2443,6 +2476,17 @@ h3 {
   .reader-title-row .author-follow-control {
     justify-content: flex-start;
     padding-top: 0;
+  }
+
+  .reader-writer-follow {
+    justify-items: start;
+    max-width: none;
+    min-width: 0;
+    text-align: left;
+  }
+
+  .reader-writer-follow .author-follow-control {
+    justify-content: flex-start;
   }
 
   .save-options-popover {
