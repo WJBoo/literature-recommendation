@@ -7,7 +7,6 @@ import asyncio
 import json
 from pathlib import Path
 import sys
-from typing import Any
 
 from sqlalchemy import text
 
@@ -91,9 +90,29 @@ def storage_checks() -> list[dict[str, str]]:
     return checks
 
 
+def account_store_checks() -> list[dict[str, str]]:
+    backend = settings.account_store_backend.strip().lower()
+    database_backed = backend in {"database", "postgres", "postgresql", "db"} or (
+        backend == "auto"
+        and settings.app_env.strip().lower() == "production"
+        and settings.database_url.startswith("postgresql")
+    )
+    if database_backed:
+        return [line("ok", "account store is database-backed for redeploy durability.")]
+    if settings.app_env.strip().lower() == "production":
+        return [
+            line(
+                "warn",
+                "account store is file-backed in production; attach persistent storage or set ACCOUNT_STORE_BACKEND=database.",
+            )
+        ]
+    return [line("ok", "account store is file-backed for local development.")]
+
+
 async def main_async(json_output: bool) -> None:
     checks: list[dict[str, str]] = []
     checks.extend(file_checks())
+    checks.extend(account_store_checks())
     checks.extend(storage_checks())
     checks.extend(await database_checks())
     if json_output:

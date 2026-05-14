@@ -138,10 +138,12 @@ This writes `data/processed/gutenberg_excerpt_embeddings.jsonl`. If PostgreSQL
 is running and the corpus has been synced to the database, add `--write-db` to
 also upsert vectors into `excerpt_embeddings`.
 
-## Prototype Accounts
+## Accounts
 
-Until PostgreSQL is available in the local shell, account data is stored in the
-ignored file `data/processed/accounts.json`. The API supports:
+In local development, account data can be stored in the ignored file
+`data/processed/accounts.json`. In production, set
+`ACCOUNT_STORE_BACKEND=database` so account data is stored in PostgreSQL and
+survives redeploys. The API supports:
 
 - `POST /api/accounts/register`
 - `POST /api/accounts/login`

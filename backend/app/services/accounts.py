@@ -70,6 +70,7 @@ DEFAULT_SAVED_FOLDERS = (
     ("favorites", "Favorites", "Excerpts worth keeping close."),
     ("poetry", "Poetry", "Poems and poetic fragments."),
 )
+ACCOUNT_STORE_DOCUMENT_KEY = "primary"
 
 
 class AccountConflictError(Exception):
@@ -120,11 +121,16 @@ class MusicPlaylistNotFoundError(Exception):
     pass
 
 
-class AccountService:
-    """File-backed prototype account store.
+class AccountStoreConfigurationError(Exception):
+    pass
 
-    The SQL tables are already modeled for the durable database path. This store
-    gives the local app working accounts while Postgres is unavailable here.
+
+class AccountService:
+    """Account store for the beta social/account surface.
+
+    Local development can use a JSON file. Production defaults to a PostgreSQL
+    JSON document so redeploys do not erase account state while the fully
+    normalized account tables continue to evolve.
     """
 
     def __init__(
@@ -848,31 +854,113 @@ class AccountService:
         )
 
     def _read_store(self) -> dict[str, Any]:
-        if not self.store_path.exists():
-            return {
-                "users": {},
-                "users_by_email": {},
-                "sessions": {},
-                "posts": {},
-                "message_threads": {},
-            }
-        with self.store_path.open("r", encoding="utf-8") as store_file:
-            store = json.load(store_file)
-        store.setdefault("users", {})
-        store.setdefault("users_by_email", {})
-        store.setdefault("sessions", {})
-        store.setdefault("posts", {})
-        store.setdefault("message_threads", {})
-        for user_record in store["users"].values():
-            ensure_user_state(user_record)
-        return store
+        if self._use_database_store():
+            return self._read_database_store()
+        return self._read_file_store()
 
     def _write_store(self, store: dict[str, Any]) -> None:
+        if self._use_database_store():
+            self._write_database_store(store)
+            return
+        self._write_file_store(store)
+
+    def _read_file_store(self) -> dict[str, Any]:
+        if not self.store_path.exists():
+            return default_account_store()
+        with self.store_path.open("r", encoding="utf-8") as store_file:
+            store = json.load(store_file)
+        return normalize_account_store(store)
+
+    def _write_file_store(self, store: dict[str, Any]) -> None:
         self.store_path.parent.mkdir(parents=True, exist_ok=True)
         temporary_path = self.store_path.with_suffix(".tmp")
         with temporary_path.open("w", encoding="utf-8") as store_file:
             json.dump(store, store_file, ensure_ascii=True, indent=2, sort_keys=True)
         temporary_path.replace(self.store_path)
+
+    def _read_database_store(self) -> dict[str, Any]:
+        try:
+            import psycopg
+            from psycopg.types.json import Jsonb
+        except ImportError as exc:  # pragma: no cover - production dependency guard.
+            raise AccountStoreConfigurationError(
+                "Install psycopg to use the database account store."
+            ) from exc
+
+        with psycopg.connect(sync_database_url(settings.database_url)) as connection:
+            self._ensure_database_store_table(connection)
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT payload FROM account_store_documents WHERE key = %s",
+                    (ACCOUNT_STORE_DOCUMENT_KEY,),
+                )
+                row = cursor.fetchone()
+                if row is not None:
+                    store = normalize_account_store(row[0])
+                    self._write_file_store_cache(store)
+                    return store
+
+                store = self._read_file_store() if self.store_path.exists() else default_account_store()
+                cursor.execute(
+                    "INSERT INTO account_store_documents (key, payload, updated_at) "
+                    "VALUES (%s, %s, now()) "
+                    "ON CONFLICT (key) DO NOTHING",
+                    (ACCOUNT_STORE_DOCUMENT_KEY, Jsonb(store)),
+                )
+                connection.commit()
+                self._write_file_store_cache(store)
+                return store
+
+    def _write_database_store(self, store: dict[str, Any]) -> None:
+        try:
+            import psycopg
+            from psycopg.types.json import Jsonb
+        except ImportError as exc:  # pragma: no cover - production dependency guard.
+            raise AccountStoreConfigurationError(
+                "Install psycopg to use the database account store."
+            ) from exc
+
+        normalized_store = normalize_account_store(store)
+        with psycopg.connect(sync_database_url(settings.database_url)) as connection:
+            self._ensure_database_store_table(connection)
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "INSERT INTO account_store_documents (key, payload, updated_at) "
+                    "VALUES (%s, %s, now()) "
+                    "ON CONFLICT (key) DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()",
+                    (ACCOUNT_STORE_DOCUMENT_KEY, Jsonb(normalized_store)),
+                )
+            connection.commit()
+        self._write_file_store_cache(normalized_store)
+
+    def _write_file_store_cache(self, store: dict[str, Any]) -> None:
+        try:
+            self._write_file_store(store)
+        except OSError:
+            # The database remains authoritative in production; the file is only
+            # a compatibility cache for local corpus code that still reads posts.
+            return
+
+    def _ensure_database_store_table(self, connection: Any) -> None:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "CREATE TABLE IF NOT EXISTS account_store_documents ("
+                "key VARCHAR(120) PRIMARY KEY, "
+                "payload JSONB NOT NULL, "
+                "updated_at TIMESTAMPTZ NOT NULL DEFAULT now()"
+                ")"
+            )
+        connection.commit()
+
+    def _use_database_store(self) -> bool:
+        backend = settings.account_store_backend.strip().lower()
+        if backend in {"database", "postgres", "postgresql", "db"}:
+            return True
+        if backend in {"file", "json", "local"}:
+            return False
+        return settings.app_env.strip().lower() == "production" and settings.database_url.startswith(
+            "postgresql"
+        )
 
     def _user_record_for_token(self, store: dict[str, Any], token: str) -> dict[str, Any]:
         session = store["sessions"].get(token)
@@ -1159,6 +1247,14 @@ def clean_message_subject(subject: str | None) -> str | None:
     return cleaned or None
 
 
+def sync_database_url(value: str) -> str:
+    if value.startswith("postgresql+asyncpg://"):
+        return value.replace("postgresql+asyncpg://", "postgresql://", 1)
+    if value.startswith("postgres://"):
+        return value.replace("postgres://", "postgresql://", 1)
+    return value
+
+
 def unique_folder_id(name: str, folders: dict[str, Any]) -> str:
     base = re.sub(r"[^a-z0-9]+", "-", clean_folder_name(name).lower()).strip("-")
     if not base:
@@ -1187,6 +1283,35 @@ def default_saved_folders(timestamp: str) -> dict[str, dict[str, Any]]:
 
 def default_feedback() -> dict[str, list[str]]:
     return {"liked": [], "disliked": [], "skipped": []}
+
+
+def default_account_store() -> dict[str, Any]:
+    return {
+        "users": {},
+        "users_by_email": {},
+        "sessions": {},
+        "posts": {},
+        "message_threads": {},
+    }
+
+
+def normalize_account_store(store: Any) -> dict[str, Any]:
+    if isinstance(store, str):
+        try:
+            store = json.loads(store)
+        except json.JSONDecodeError:
+            store = default_account_store()
+    if not isinstance(store, dict):
+        store = default_account_store()
+    store.setdefault("users", {})
+    store.setdefault("users_by_email", {})
+    store.setdefault("sessions", {})
+    store.setdefault("posts", {})
+    store.setdefault("message_threads", {})
+    for user_record in store["users"].values():
+        if isinstance(user_record, dict):
+            ensure_user_state(user_record)
+    return store
 
 
 def default_profile_metadata() -> dict[str, str | None]:

@@ -57,11 +57,19 @@ EMBEDDING_MODEL=local-hashing-v1
 EMBEDDING_DIMENSIONS=1536
 RECOMMENDATION_VECTOR_BACKEND=auto
 RECOMMENDATION_VECTOR_CANDIDATE_LIMIT=600
-ACCOUNT_STORE_PATH=/app/data/processed/accounts.json
+ACCOUNT_STORE_BACKEND=database
 CORS_ORIGINS=["https://<your-vercel-app>.vercel.app"]
 ```
 
 Railway should inject `DATABASE_URL` from its PostgreSQL service. If not, copy the PostgreSQL service's connection URL into the backend service variables.
+
+Do not store beta account data only at `/app/data/processed/accounts.json` on Railway. That path lives inside the deployment container and can be replaced on each redeploy. `ACCOUNT_STORE_BACKEND=database` keeps users, sessions, saves, annotations, messages, follows, posts, reading progress, and music playlists in Railway Postgres.
+
+If you already have live file-backed account data, export the current `accounts.json` before redeploying the backend, then import it into Postgres:
+
+```bash
+railway run backend/.venv/bin/python scripts/migrate_account_store_to_db.py --input-path data/processed/accounts.json
+```
 
 ### Seed Railway Postgres from Local Data
 
@@ -126,9 +134,9 @@ Frontend:
 - Open the Vercel URL.
 - Confirm Discover loads recommendations.
 - Click into an excerpt.
-- Create a test account.
+- Create a test account, save or annotate an excerpt, redeploy the backend, and confirm the account data remains.
 - Upload a small profile image or post image and confirm the resulting URL comes from R2.
 
 ## Current Caveat
 
-The broad account/social feature set still uses the JSON account store. On Railway's Docker service this is acceptable for a very small smoke test, but it is not the final durable account architecture. Before inviting real users, either attach persistent storage for `ACCOUNT_STORE_PATH` or complete the DB-backed account service migration.
+The broad account/social feature set uses a compact database-backed account document in production. This is durable across redeploys, but still intentionally simpler than the final normalized account/social schema.

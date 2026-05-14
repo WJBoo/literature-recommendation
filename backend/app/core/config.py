@@ -16,6 +16,7 @@ class Settings(BaseSettings):
         alias="DATABASE_URL",
     )
     account_store_path: Path | None = Field(default=None, alias="ACCOUNT_STORE_PATH")
+    account_store_backend: str = Field(default="auto", alias="ACCOUNT_STORE_BACKEND")
     gutenberg_raw_dir: Path = Field(
         default=PROJECT_ROOT / "data/raw/gutenberg", alias="GUTENBERG_RAW_DIR"
     )

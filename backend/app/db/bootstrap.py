@@ -18,6 +18,15 @@ async def init_database(*, drop_existing: bool = False) -> None:
             await connection.run_sync(Base.metadata.drop_all)
         await connection.run_sync(Base.metadata.create_all)
         if settings.database_url.startswith("postgresql"):
+            await connection.execute(
+                text(
+                    "CREATE TABLE IF NOT EXISTS account_store_documents ("
+                    "key VARCHAR(120) PRIMARY KEY, "
+                    "payload JSONB NOT NULL, "
+                    "updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()"
+                    ")"
+                )
+            )
             await connection.execute(text("ALTER TABLE works ALTER COLUMN gutenberg_id TYPE VARCHAR(128)"))
             await connection.execute(
                 text(
