@@ -14,6 +14,7 @@ import sys
 from typing import Any
 
 from sqlalchemy import select, text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -153,40 +154,71 @@ async def write_embeddings_to_database(records: list[dict[str, Any]]) -> dict[st
     await init_database()
     written = 0
     missing_excerpts = 0
+    batch_size = 100
 
     async with async_session() as session:
-        for record in records:
-            excerpt = await session.scalar(
-                select(Excerpt).where(Excerpt.external_id == record["excerpt_id"])
+        excerpt_external_ids = [record["excerpt_id"] for record in records]
+        excerpt_result = await session.execute(
+            select(Excerpt.external_id, Excerpt.id).where(
+                Excerpt.external_id.in_(excerpt_external_ids)
             )
-            if excerpt is None:
-                missing_excerpts += 1
+        )
+        excerpt_ids_by_external_id = {
+            str(external_id): int(excerpt_id) for external_id, excerpt_id in excerpt_result.all()
+        }
+
+        for batch_start, batch in enumerate(chunks(records, batch_size)):
+            values: list[dict[str, Any]] = []
+            for record in batch:
+                excerpt_id = excerpt_ids_by_external_id.get(record["excerpt_id"])
+                if excerpt_id is None:
+                    missing_excerpts += 1
+                    continue
+                values.append(
+                    {
+                        "excerpt_id": excerpt_id,
+                        "model": record["model"],
+                        "provider": record["provider"],
+                        "dimensions": record["dimensions"],
+                        "source_text_hash": record["source_text_hash"],
+                        "embedding_text": record["embedding_text"],
+                        "embedding": record["vector"],
+                    }
+                )
+
+            if not values:
                 continue
 
-            embedding = await session.scalar(
-                select(ExcerptEmbedding).where(
-                    ExcerptEmbedding.excerpt_id == excerpt.id,
-                    ExcerptEmbedding.model == record["model"],
-                    ExcerptEmbedding.dimensions == record["dimensions"],
-                )
+            statement = pg_insert(ExcerptEmbedding).values(values)
+            update_columns = {
+                "provider": statement.excluded.provider,
+                "source_text_hash": statement.excluded.source_text_hash,
+                "embedding_text": statement.excluded.embedding_text,
+                "embedding": statement.excluded.embedding,
+            }
+            result = await session.execute(
+                statement.on_conflict_do_update(
+                    constraint="uq_excerpt_embedding_model",
+                    set_=update_columns,
+                ).returning(ExcerptEmbedding.id)
             )
-            if embedding is None:
-                embedding = ExcerptEmbedding(
-                    excerpt_id=excerpt.id,
-                    model=record["model"],
-                    dimensions=record["dimensions"],
-                )
-                session.add(embedding)
-
-            embedding.provider = record["provider"]
-            embedding.source_text_hash = record["source_text_hash"]
-            embedding.embedding_text = record["embedding_text"]
-            embedding.embedding = record["vector"]
-            written += 1
+            written += len(result.all())
+            await session.commit()
+            print(
+                f"Synced embeddings {min((batch_start + 1) * batch_size, len(records))}/{len(records)}.",
+                flush=True,
+            )
 
         if settings.database_url.startswith("postgresql"):
-            await session.execute(text("ANALYZE excerpt_embeddings"))
-        await session.commit()
+            try:
+                await session.execute(text("ANALYZE excerpt_embeddings"))
+                await session.commit()
+            except Exception as exc:  # noqa: BLE001 - not fatal for deployment seeding.
+                await session.rollback()
+                print(
+                    f"Skipped ANALYZE excerpt_embeddings after sync: {type(exc).__name__}: {exc}",
+                    flush=True,
+                )
 
     await engine.dispose()
     return {"written": written, "missing_excerpts": missing_excerpts}
