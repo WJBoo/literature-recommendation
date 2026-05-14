@@ -127,11 +127,26 @@ async def sync_processed_corpus(
     *,
     prune: bool = False,
     batch_size: int = 1_000,
+    max_works: int | None = None,
+    max_excerpts: int | None = None,
+    reset_gutenberg: bool = False,
 ) -> dict[str, int]:
     await init_database()
+    if reset_gutenberg:
+        await reset_gutenberg_records()
 
     work_records = read_jsonl(works_path)
     excerpt_records = read_jsonl(excerpts_path)
+    work_records, excerpt_records = limit_corpus_records(
+        work_records,
+        excerpt_records,
+        max_works=max_works,
+        max_excerpts=max_excerpts,
+    )
+    print(
+        f"Preparing to sync {len(work_records)} works and {len(excerpt_records)} excerpts.",
+        flush=True,
+    )
 
     pruned_excerpts = 0
     pruned_works = 0
@@ -177,6 +192,76 @@ async def sync_processed_corpus(
         "pruned_excerpts": pruned_excerpts,
         "pruned_works": pruned_works,
     }
+
+
+async def reset_gutenberg_records() -> None:
+    async with async_session() as session:
+        await session.execute(
+            text(
+                "TRUNCATE TABLE "
+                "excerpt_classifications, "
+                "excerpt_embeddings, "
+                "work_embeddings, "
+                "excerpts, "
+                "works "
+                "RESTART IDENTITY CASCADE"
+            )
+        )
+        await session.commit()
+    print("Reset existing corpus tables before syncing.", flush=True)
+
+
+def limit_corpus_records(
+    work_records: list[dict[str, Any]],
+    excerpt_records: list[dict[str, Any]],
+    *,
+    max_works: int | None,
+    max_excerpts: int | None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    if max_works is not None and max_works > 0:
+        allowed_work_ids = {record["id"] for record in work_records[:max_works]}
+        excerpt_records = [
+            record for record in excerpt_records if record.get("work_id") in allowed_work_ids
+        ]
+
+    if max_excerpts is not None and max_excerpts > 0 and len(excerpt_records) > max_excerpts:
+        excerpt_records = diverse_excerpt_subset(excerpt_records, max_excerpts)
+
+    referenced_work_ids = {record["work_id"] for record in excerpt_records}
+    work_records = [record for record in work_records if record["id"] in referenced_work_ids]
+    return work_records, excerpt_records
+
+
+def diverse_excerpt_subset(
+    excerpt_records: list[dict[str, Any]],
+    max_excerpts: int,
+) -> list[dict[str, Any]]:
+    work_order: list[str] = []
+    excerpts_by_work: dict[str, list[dict[str, Any]]] = {}
+    for record in excerpt_records:
+        work_id = record["work_id"]
+        if work_id not in excerpts_by_work:
+            work_order.append(work_id)
+            excerpts_by_work[work_id] = []
+        excerpts_by_work[work_id].append(record)
+
+    indexes_by_work = {work_id: 0 for work_id in work_order}
+    selected: list[dict[str, Any]] = []
+    while len(selected) < max_excerpts:
+        added_this_round = False
+        for work_id in work_order:
+            index = indexes_by_work[work_id]
+            work_excerpts = excerpts_by_work[work_id]
+            if index >= len(work_excerpts):
+                continue
+            selected.append(work_excerpts[index])
+            indexes_by_work[work_id] = index + 1
+            added_this_round = True
+            if len(selected) >= max_excerpts:
+                break
+        if not added_this_round:
+            break
+    return selected
 
 
 async def upsert_work_records(
@@ -515,6 +600,13 @@ def main() -> None:
     )
     parser.add_argument("--prune", action="store_true")
     parser.add_argument("--batch-size", type=int, default=1_000)
+    parser.add_argument("--max-works", type=int, default=None)
+    parser.add_argument("--max-excerpts", type=int, default=None)
+    parser.add_argument(
+        "--reset-gutenberg",
+        action="store_true",
+        help="Clear existing corpus rows before syncing. Use only before public/user data exists.",
+    )
     args = parser.parse_args()
 
     counts = asyncio.run(
@@ -523,6 +615,9 @@ def main() -> None:
             args.excerpts_path,
             prune=args.prune,
             batch_size=args.batch_size,
+            max_works=args.max_works,
+            max_excerpts=args.max_excerpts,
+            reset_gutenberg=args.reset_gutenberg,
         )
     )
     print(

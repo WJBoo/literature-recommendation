@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 from __future__ import annotations
+# ruff: noqa: E402
 
 import argparse
 import asyncio
@@ -191,6 +192,13 @@ async def write_embeddings_to_database(records: list[dict[str, Any]]) -> dict[st
     return {"written": written, "missing_excerpts": missing_excerpts}
 
 
+async def load_database_excerpt_external_ids() -> set[str]:
+    await init_database()
+    async with async_session() as session:
+        result = await session.execute(select(Excerpt.external_id))
+        return {str(external_id) for external_id in result.scalars().all()}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate one vector per processed excerpt.")
     parser.add_argument(
@@ -209,6 +217,11 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--write-db", action="store_true")
+    parser.add_argument(
+        "--only-db-excerpts",
+        action="store_true",
+        help="Only generate/sync embeddings for excerpts already present in the database.",
+    )
     args = parser.parse_args()
 
     provider = choose_provider(args.provider, args.dimensions, args.model)
@@ -217,6 +230,15 @@ def main() -> None:
         provider_name = "openai" if os.getenv("OPENAI_API_KEY") else "hashing"
 
     input_records = read_jsonl(args.input_path)
+    if args.only_db_excerpts:
+        database_excerpt_ids = asyncio.run(load_database_excerpt_external_ids())
+        input_records = [
+            record for record in input_records if record["excerpt_id"] in database_excerpt_ids
+        ]
+        print(
+            f"Filtered embedding input to {len(input_records)} excerpts present in the database.",
+            flush=True,
+        )
     existing_records = {} if args.force else load_existing_embeddings(args.output_path)
     output_records, reused = build_embedding_records(
         input_records,
