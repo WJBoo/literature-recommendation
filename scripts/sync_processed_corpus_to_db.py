@@ -265,15 +265,15 @@ async def upsert_excerpt_records(
                 }
 
                 excerpt_ids = list(excerpt_ids_by_external_id.values())
-                if excerpt_ids:
+                for excerpt_id_batch in chunked_values(excerpt_ids, 100):
                     await session.execute(
                         delete(ExcerptClassification).where(
-                            ExcerptClassification.excerpt_id.in_(excerpt_ids)
+                            ExcerptClassification.excerpt_id.in_(excerpt_id_batch)
                         )
                     )
 
                 classification_values = classification_records(batch, excerpt_ids_by_external_id)
-                for classification_batch in chunked(classification_values, 3_000):
+                for classification_batch in chunked(classification_values, 1_000):
                     classification_statement = pg_insert(ExcerptClassification).values(
                         classification_batch
                     )
@@ -288,13 +288,14 @@ async def upsert_excerpt_records(
                     )
 
                 await session.commit()
-            except Exception:
+            except Exception as exc:
                 await session.rollback()
                 print(
                     "Failed while syncing excerpts "
                     f"{batch_start + 1}-{min(batch_start + len(batch), total)}.",
                     flush=True,
                 )
+                print(f"{type(exc).__name__}: {exc}", flush=True)
                 raise
             synced_excerpts += len(batch)
             print(
@@ -395,6 +396,11 @@ def batched(records: list[dict[str, Any]], batch_size: int) -> list[tuple[int, l
 def chunked(records: list[dict[str, Any]], batch_size: int) -> list[list[dict[str, Any]]]:
     safe_batch_size = max(1, batch_size)
     return [records[index : index + safe_batch_size] for index in range(0, len(records), safe_batch_size)]
+
+
+def chunked_values(values: list[Any], batch_size: int) -> list[list[Any]]:
+    safe_batch_size = max(1, batch_size)
+    return [values[index : index + safe_batch_size] for index in range(0, len(values), safe_batch_size)]
 
 
 async def prune_missing_records(
