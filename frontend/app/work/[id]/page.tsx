@@ -1,6 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { AppShell } from "../../../components/AppShell";
+import { AuthorFollowButton } from "../../../components/AuthorFollowButton";
 import { HighlightedReaderBody } from "../../../components/HighlightedReaderBody";
 import { InteractionButtons } from "../../../components/InteractionButtons";
 import { ListeningPanel } from "../../../components/ListeningPanel";
@@ -51,6 +52,8 @@ export default async function WorkPage({
   const workByline =
     item.work_title && item.work_title !== item.title ? `${item.work_title} · ` : "";
   const partByline = readerPartByline(item);
+  const writerId = authorId(item.author);
+  const hasSiblingExcerpts = readerHasSiblingExcerpts(item);
 
   return (
     <AppShell>
@@ -72,10 +75,13 @@ export default async function WorkPage({
         />
         <header>
           <p className="eyebrow">{item.form}</p>
-          <h1>{item.title}</h1>
+          <div className="reader-title-row">
+            <h1>{item.title}</h1>
+            <AuthorFollowButton authorId={writerId} initialFollowed={false} />
+          </div>
           <p className="muted">
             {partByline ? `${partByline} · ` : workByline}
-            <Link className="text-link" href={`/authors/${authorId(item.author)}`}>
+            <Link className="text-link" href={`/authors/${writerId}`}>
               {item.author}
             </Link>{" "}
             · {item.word_count} words
@@ -85,6 +91,7 @@ export default async function WorkPage({
         <InteractionButtons
           author={item.author}
           excerptId={item.id}
+          hasSiblingExcerpts={hasSiblingExcerpts}
           workId={item.work_id}
           workTitle={item.work_title ?? item.title}
         >
@@ -206,6 +213,20 @@ function readerExcerptProgress(item: {
     return null;
   }
   return `Excerpt ${item.section_excerpt_index}/${item.section_excerpt_count}`;
+}
+
+function readerHasSiblingExcerpts(item: {
+  first_item?: { id: string } | null;
+  previous_item?: { id: string } | null;
+  next_item?: { id: string } | null;
+  section_excerpt_count?: number | null;
+}) {
+  return Boolean(
+    item.first_item ||
+      item.previous_item ||
+      item.next_item ||
+      (item.section_excerpt_count && item.section_excerpt_count > 1),
+  );
 }
 
 function cleanPartLabel(value?: string | null) {

@@ -1139,6 +1139,29 @@ h3 {
   align-items: center;
 }
 
+.reader-title-row {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.reader-title-row h1 {
+  margin: 0;
+  min-width: 0;
+}
+
+.reader-title-row .author-follow-control {
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  padding-top: 4px;
+}
+
+.reader-action-cluster {
+  display: inline-flex;
+  position: relative;
+}
+
 .reader-navigation {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1186,6 +1209,48 @@ h3 {
   align-items: center;
   border-top: 1px solid var(--line);
   padding-top: 10px;
+}
+
+.save-options-popover {
+  background: #fffdf8;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 14px 28px rgba(70, 50, 22, 0.16);
+  display: grid;
+  gap: 8px;
+  left: 0;
+  min-width: 230px;
+  padding: 10px;
+  position: absolute;
+  top: calc(100% + 8px);
+  z-index: 40;
+}
+
+.save-options-popover::before {
+  background: #fffdf8;
+  border-left: 1px solid var(--line);
+  border-top: 1px solid var(--line);
+  content: "";
+  height: 10px;
+  left: 18px;
+  position: absolute;
+  top: -6px;
+  transform: rotate(45deg);
+  width: 10px;
+}
+
+.save-options-popover .folder-select {
+  width: 100%;
+}
+
+.save-option-buttons {
+  display: grid;
+  gap: 8px;
+}
+
+.save-option-buttons .secondary-button {
+  justify-content: center;
+  width: 100%;
 }
 
 .highlight-color-picker {
@@ -1360,18 +1425,6 @@ h3 {
   transform: rotate(-1.4deg);
   white-space: normal;
   z-index: 30;
-}
-
-.highlight-comment-popover::before {
-  background: rgba(255, 253, 248, 0.72);
-  border: 1px solid rgba(216, 185, 78, 0.35);
-  content: "";
-  height: 12px;
-  left: 18px;
-  position: absolute;
-  top: -8px;
-  transform: rotate(2deg);
-  width: 54px;
 }
 
 .highlight-comment-popover::after {
@@ -2380,6 +2433,20 @@ h3 {
 
   .reader-display-controls {
     justify-content: flex-start;
+  }
+
+  .reader-title-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .reader-title-row .author-follow-control {
+    justify-content: flex-start;
+    padding-top: 0;
+  }
+
+  .save-options-popover {
+    max-width: calc(100vw - 36px);
   }
 
   .reader-body {

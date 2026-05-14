@@ -38,6 +38,7 @@ type InteractionButtonsProps = {
   workId: string;
   workTitle: string;
   author?: string | null;
+  hasSiblingExcerpts?: boolean;
   children?: ReactNode;
 };
 
@@ -67,7 +68,14 @@ const highlightColors: Array<{ value: SavedHighlightColor; label: string }> = [
   { value: "lavender", label: "Lavender" },
 ];
 
-export function InteractionButtons({ children, excerptId, workId, workTitle, author }: InteractionButtonsProps) {
+export function InteractionButtons({
+  author,
+  children,
+  excerptId,
+  hasSiblingExcerpts = false,
+  workId,
+  workTitle,
+}: InteractionButtonsProps) {
   const router = useRouter();
   const [feedbackState, setFeedbackState] = useState<FeedbackState>(null);
   const [isSaved, setIsSaved] = useState(false);
@@ -224,6 +232,11 @@ export function InteractionButtons({ children, excerptId, workId, workTitle, aut
       return;
     }
 
+    if (!isSaved && !hasSiblingExcerpts) {
+      await handleSaveChoice("excerpt");
+      return;
+    }
+
     if (!isSaved) {
       setActivePanel((current) => (current === "save" ? null : "save"));
       return;
@@ -352,18 +365,85 @@ export function InteractionButtons({ children, excerptId, workId, workTitle, aut
     <div className="reader-actions" aria-label="Reader actions">
       {actions.map(({ eventType, label, nextState, Icon }) => {
         const isActive = actionIsActive(eventType, nextState, feedbackState, isSaved);
+        if (eventType === "save") {
+          return (
+            <div className="reader-action-cluster" key={eventType}>
+              <button
+                className={isActive ? "secondary-button active-button" : "secondary-button"}
+                disabled={pendingEvent !== null}
+                aria-pressed={isActive}
+                onClick={() => void handleAction(eventType)}
+                type="button"
+              >
+                <Icon size={18} aria-hidden="true" />
+                {pendingEvent === eventType ? pendingLabel(eventType) : label}
+              </button>
+              {activePanel === "save" && hasSiblingExcerpts ? (
+                <div className="save-options-popover" aria-label="Save options" role="group">
+                  {folders.length ? (
+                    <select
+                      aria-label="Saved folder"
+                      className="folder-select"
+                      onChange={(event) => setSelectedFolderId(event.target.value)}
+                      value={selectedFolderId}
+                    >
+                      {folders.map((folder) => (
+                        <option key={folder.id} value={folder.id}>
+                          {folder.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : null}
+                  <div className="save-option-buttons">
+                    <button
+                      className="secondary-button"
+                      disabled={pendingEvent !== null}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => void handleSaveChoice("work")}
+                      type="button"
+                    >
+                      Whole work
+                    </button>
+                    <button
+                      className="secondary-button"
+                      disabled={pendingEvent !== null}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => void handleSaveChoice("excerpt")}
+                      type="button"
+                    >
+                      Current piece
+                    </button>
+                    <button
+                      className="secondary-button quiet-button"
+                      disabled={pendingEvent !== null}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => {
+                        setActivePanel(null);
+                      }}
+                      type="button"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          );
+        }
         return (
           <Fragment key={eventType}>
-            <button
-              className={isActive ? "secondary-button active-button" : "secondary-button"}
-              disabled={pendingEvent !== null}
-              aria-pressed={isActive}
-              onClick={() => void handleAction(eventType)}
-              type="button"
-            >
-              <Icon size={18} aria-hidden="true" />
-              {pendingEvent === eventType ? pendingLabel(eventType) : label}
-            </button>
+            <div className="reader-action-cluster">
+              <button
+                className={isActive ? "secondary-button active-button" : "secondary-button"}
+                disabled={pendingEvent !== null}
+                aria-pressed={isActive}
+                onClick={() => void handleAction(eventType)}
+                type="button"
+              >
+                <Icon size={18} aria-hidden="true" />
+                {pendingEvent === eventType ? pendingLabel(eventType) : label}
+              </button>
+            </div>
             {eventType === "annotate" ? children : null}
           </Fragment>
         );
@@ -377,53 +457,6 @@ export function InteractionButtons({ children, excerptId, workId, workTitle, aut
         Who else
         {socialContext ? ` (${socialContext.like_count}/${socialContext.save_count})` : ""}
       </button>
-      {folders.length && activePanel === "save" ? (
-        <select
-          aria-label="Saved folder"
-          className="folder-select"
-          onChange={(event) => setSelectedFolderId(event.target.value)}
-          value={selectedFolderId}
-        >
-          {folders.map((folder) => (
-            <option key={folder.id} value={folder.id}>
-              {folder.name}
-            </option>
-          ))}
-        </select>
-      ) : null}
-      {activePanel === "save" ? (
-        <div className="save-options-panel" aria-label="Save options" role="group">
-          <button
-            className="secondary-button"
-            disabled={pendingEvent !== null}
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => void handleSaveChoice("work")}
-            type="button"
-          >
-            Whole work
-          </button>
-          <button
-            className="secondary-button"
-            disabled={pendingEvent !== null}
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => void handleSaveChoice("excerpt")}
-            type="button"
-          >
-            Current piece
-          </button>
-          <button
-            className="secondary-button quiet-button"
-            disabled={pendingEvent !== null}
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => {
-              setActivePanel(null);
-            }}
-            type="button"
-          >
-            Cancel
-          </button>
-        </div>
-      ) : null}
       {activePanel === "annotate" ? (
         <div className="save-options-panel" aria-label="Annotation options" role="group">
           <div className="highlight-color-picker" aria-label="Highlight color">
