@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 from __future__ import annotations
+# ruff: noqa: E402
 
 import argparse
 import json
@@ -69,16 +70,25 @@ def select_canonical_works(records: list[dict[str, Any]]) -> tuple[list[dict[str
         duplicates.sort(key=work_quality_key)
         kept.append(duplicates[0])
         dropped.extend(duplicates[1:])
-    kept.sort(key=lambda record: int(record.get("gutenberg_id") or 0))
-    dropped.sort(key=lambda record: int(record.get("gutenberg_id") or 0))
+    kept.sort(key=work_sort_key)
+    dropped.sort(key=work_sort_key)
     return kept, dropped
 
 
 def work_quality_key(record: dict[str, Any]) -> tuple[int, int, int]:
     noise = edition_noise_score(record.get("title"))
     word_count = int(record.get("clean_word_count") or 0)
-    gutenberg_id = int(record.get("gutenberg_id") or 0)
+    gutenberg_id = numeric_gutenberg_id(record)
     return (noise, -word_count, gutenberg_id)
+
+
+def work_sort_key(record: dict[str, Any]) -> tuple[int, str]:
+    return (numeric_gutenberg_id(record), str(record.get("id") or ""))
+
+
+def numeric_gutenberg_id(record: dict[str, Any]) -> int:
+    value = str(record.get("gutenberg_id") or "").strip()
+    return int(value) if value.isdigit() else 10**12
 
 
 def canonicalize_corpus(

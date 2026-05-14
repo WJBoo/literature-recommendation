@@ -75,6 +75,18 @@ backend/.venv/bin/python scripts/generate_latent_factors.py --factors 32 --max-t
 backend/.venv/bin/python scripts/benchmark_recommendations.py --runs 5 --mode async
 ```
 
+After a corpus exists, append new works without reprocessing everything:
+
+```bash
+cd "/Users/william/Desktop/Summer 2025/Literature Recommendation Engine"
+backend/.venv/bin/python scripts/expand_processed_corpus.py --target-new-works 400 --candidate-limit 5000
+backend/.venv/bin/python scripts/canonicalize_processed_corpus.py --write
+backend/.venv/bin/python scripts/filter_processed_corpus_quality.py --write
+backend/.venv/bin/python scripts/generate_excerpt_embeddings.py --provider hashing
+backend/.venv/bin/python scripts/generate_latent_factors.py --factors 16 --max-terms 3500
+backend/.venv/bin/python scripts/benchmark_recommendations.py --runs 1 --mode async
+```
+
 The importer writes download/processing failures to
 `data/processed/gutenberg_bulk_failures.jsonl`, so large batches can be tuned
 without stopping on the first bad source file.
