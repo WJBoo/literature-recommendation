@@ -24,10 +24,14 @@ export default async function WorkPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams?: Promise<{ annotation?: string }>;
+  searchParams?: Promise<{ annotation?: string; feature?: string; source?: string }>;
 }) {
   const { id } = await params;
-  const annotationId = (await searchParams)?.annotation ?? null;
+  const resolvedSearchParams = await searchParams;
+  const annotationId = resolvedSearchParams?.annotation ?? null;
+  const isPoemOfTheDay =
+    resolvedSearchParams?.feature === "poem-of-the-day" ||
+    resolvedSearchParams?.source === "poem-of-the-day";
   const fallbackWork = getWork(id);
   const item = await fetchReaderItem(id).catch(() => ({
     id: fallbackWork.id,
@@ -74,7 +78,17 @@ export default async function WorkPage({
           }}
         />
         <header>
-          <p className="eyebrow">{item.form}</p>
+          <p className={isPoemOfTheDay ? "eyebrow reader-feature-eyebrow" : "eyebrow"}>
+            {isPoemOfTheDay ? (
+              <>
+                <span>Poem of the Day</span>
+                <span aria-hidden="true">·</span>
+                <span>{item.form}</span>
+              </>
+            ) : (
+              item.form
+            )}
+          </p>
           <div className="reader-title-row">
             <h1>{item.title}</h1>
             <aside className="reader-writer-follow" aria-label="Writer">

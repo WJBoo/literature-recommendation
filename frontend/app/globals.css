@@ -749,6 +749,13 @@ h3 {
   gap: 22px;
 }
 
+.reader-feature-eyebrow {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .recommendation-controls {
   display: flex;
   align-items: center;

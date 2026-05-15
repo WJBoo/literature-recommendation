@@ -163,12 +163,26 @@ def test_excerpt_quality_rejects_boilerplate_and_heading_fragments():
             "Heading to Chapter I. 1\n\n\"He came down to see the place\" 2"
         ),
     )
+    publisher_title_page = processed_excerpt(
+        "publisher-title-page",
+        "The Poetical Works of Robert Bridges",
+        "Robert Bridges",
+        "poetry",
+        (
+            "VOLUME VI: The Feast of Bacchus--Second Part of the History of Nero--Notes.\n\n"
+            "VOLUME VII in preparation\n\n"
+            "*** This Volume completes the Uniform Edition of Mr. Robert Bridges' Works.\n\n"
+            "LONDON: SMITH, ELDER & CO., 15 WATERLOO PLACE, S.W.\n\n"
+            "POETICAL WORKS\n\nOF\n\nROBERT BRIDGES"
+        ),
+    )
 
     assert not is_recommendable_excerpt(boilerplate)
     assert not is_recommendable_excerpt(heading)
     assert not is_recommendable_excerpt(promotional_note)
     assert not is_recommendable_excerpt(critical_note)
     assert not is_recommendable_excerpt(front_matter)
+    assert not is_recommendable_excerpt(publisher_title_page)
     assert assess_excerpt_quality(literary).score > 0.75
     assert is_recommendable_excerpt(literary)
 

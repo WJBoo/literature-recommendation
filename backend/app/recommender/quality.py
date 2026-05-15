@@ -36,8 +36,14 @@ TITLE_PAGE_RE = re.compile(
     r"\b(?:copyright|all rights reserved|published by|publisher|printed by|"
     r"macmillan|harper\s*&|new york|london:|new edition|illustrations|edited by|"
     r"author of|introduction by|with introduction|retold in modern prose|"
-    r"unrepresented in)\b",
+    r"unrepresented in|uniform edition|waterloo place)\b",
     re.IGNORECASE,
+)
+PUBLICATION_NOTICE_RE = re.compile(
+    r"(?:\bvolume\s+[ivxlcdm]+\b.{0,120}\bin preparation\b|"
+    r"\bthis volume completes\b|\buniform edition\b|\bwaterloo place\b|"
+    r"\bsmith,\s*elder\s*&\s*co\b|\bcharing cross road\b|\bchancery lane\b)",
+    re.IGNORECASE | re.DOTALL,
 )
 ADVERTISING_RE = re.compile(
     r"(?:\$\d|by mail|net\.|thousand sold|popular books|fifth impression|"
@@ -178,6 +184,8 @@ def assess_excerpt_quality(excerpt: ProcessedExcerpt) -> ExcerptQuality:
         or re.search(r"\n\s*by\s*\n", raw_first_1200_lower)
         or sentence_count(text[:1200]) < 4
     ):
+        reasons.append("title_or_copyright_page")
+    if PUBLICATION_NOTICE_RE.search(raw_first_1200):
         reasons.append("title_or_copyright_page")
     if looks_like_front_matter_title_page(text, excerpt):
         reasons.append("title_or_copyright_page")

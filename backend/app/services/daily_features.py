@@ -7,6 +7,7 @@ from hashlib import sha256
 import re
 from urllib.parse import quote
 
+from app.recommender.quality import assess_excerpt_quality
 from app.schemas.recommendations import (
     ListeningRecommendationResponse,
     MusicCatalogResponse,
@@ -19,9 +20,17 @@ from app.services.processed_corpus import ProcessedCorpusService, ProcessedExcer
 
 GENERIC_POEM_TITLE_RE = re.compile(r"^(?:poem|section|excerpt)\s+\d+(?:,?\s+section\s+\d+)?$", re.IGNORECASE)
 TOKEN_RE = re.compile(r"[a-z][a-z']{2,}")
+DAILY_LINE_WORD_RE = re.compile(r"[A-Za-z][A-Za-z']{1,}")
 POEM_OF_DAY_MIN_WORDS = 12
 POEM_OF_DAY_MAX_WORDS = 220
 EPIC_SECTION_TITLE_RE = re.compile(r"\b(?:book|canto)\s+(?:[ivxlcdm]+|\d+)\b", re.IGNORECASE)
+DAILY_POEM_FRONT_MATTER_RE = re.compile(
+    r"\b(?:volume\s+[ivxlcdm]+|in preparation|this volume completes|uniform edition|"
+    r"waterloo place|smith,\s*elder|london:|published by|printed by|copyright|"
+    r"title-?page|frontispiece|contents|list of illustrations|all rights reserved)\b",
+    re.IGNORECASE,
+)
+DAILY_POEM_ALLOWED_QUALITY_REASONS = {"too_short"}
 EPIC_POEM_OF_DAY_TERMS = (
     "epic poetry",
     "epic poem",
@@ -629,7 +638,47 @@ def is_poem_of_day_candidate(excerpt: ProcessedExcerpt) -> bool:
     ).lower()
     if any(term in metadata_context for term in EPIC_POEM_OF_DAY_TERMS):
         return False
-    return not EPIC_SECTION_TITLE_RE.search(title_context)
+    if EPIC_SECTION_TITLE_RE.search(title_context):
+        return False
+
+    quality = assess_excerpt_quality(excerpt)
+    blocking_quality_reasons = set(quality.reasons) - DAILY_POEM_ALLOWED_QUALITY_REASONS
+    if blocking_quality_reasons or quality.score < 0.45:
+        return False
+    return has_daily_poem_shape(excerpt)
+
+
+def has_daily_poem_shape(excerpt: ProcessedExcerpt) -> bool:
+    lines = [line.strip() for line in excerpt.text.splitlines() if line.strip()]
+    if len(lines) < 3:
+        return False
+
+    first_lines = lines[:14]
+    first_block = "\n".join(first_lines)
+    if DAILY_POEM_FRONT_MATTER_RE.search(first_block):
+        return False
+
+    line_word_counts = [len(DAILY_LINE_WORD_RE.findall(line)) for line in first_lines]
+    text_lines = [line for line, count in zip(first_lines, line_word_counts, strict=False) if count >= 2]
+    if not text_lines:
+        return False
+
+    uppercase_lines = [
+        line
+        for line in text_lines
+        if upper_alpha_share(line) > 0.72 and len(DAILY_LINE_WORD_RE.findall(line)) <= 12
+    ]
+    short_display_lines = len([count for count in line_word_counts[:10] if 0 < count <= 2])
+    if len(uppercase_lines) >= 4 and len(uppercase_lines) / len(text_lines) >= 0.45:
+        return False
+    return short_display_lines < 6
+
+
+def upper_alpha_share(value: str) -> float:
+    letters = [char for char in value if char.isalpha()]
+    if not letters:
+        return 0.0
+    return sum(1 for char in letters if char.isupper()) / len(letters)
 
 
 def daily_rank_key(day: str, excerpt: ProcessedExcerpt) -> str:

@@ -47,7 +47,7 @@ export function PoemOfTheDay() {
         </p>
         <p className="poem-of-day-excerpt">{poem.work.excerpt}</p>
       </div>
-      <Link className="primary-button" href={`/work/${poem.work.id}`}>
+      <Link className="primary-button" href={`/work/${poem.work.id}?feature=poem-of-the-day`}>
         <BookOpen size={17} aria-hidden="true" />
         Read poem
       </Link>
