@@ -19,6 +19,31 @@ from app.services.processed_corpus import ProcessedCorpusService, ProcessedExcer
 
 GENERIC_POEM_TITLE_RE = re.compile(r"^(?:poem|section|excerpt)\s+\d+(?:,?\s+section\s+\d+)?$", re.IGNORECASE)
 TOKEN_RE = re.compile(r"[a-z][a-z']{2,}")
+POEM_OF_DAY_MIN_WORDS = 12
+POEM_OF_DAY_MAX_WORDS = 220
+EPIC_SECTION_TITLE_RE = re.compile(r"\b(?:book|canto)\s+(?:[ivxlcdm]+|\d+)\b", re.IGNORECASE)
+EPIC_POEM_OF_DAY_TERMS = (
+    "epic poetry",
+    "epic poem",
+    "the iliad",
+    "the odyssey",
+    "aeneid",
+    "beowulf",
+    "paradise lost",
+    "faerie queene",
+    "divine comedy",
+    "inferno",
+    "purgatorio",
+    "paradiso",
+    "mahabharata",
+    "maha-bharata",
+    "ramayana",
+    "song of roland",
+    "chanson de roland",
+    "orlando furioso",
+    "jerusalem delivered",
+    "kalevala",
+)
 
 TONE_KEYWORDS: dict[str, set[str]] = {
     "romantic": {"love", "beloved", "heart", "beauty", "kiss", "romance", "sweet", "desire"},
@@ -581,7 +606,30 @@ def music_preference_rank(
 
 
 def is_poem_of_day_candidate(excerpt: ProcessedExcerpt) -> bool:
-    return excerpt.form.lower() == "poetry" and 12 <= excerpt.word_count <= 1500
+    if excerpt.form.lower() != "poetry":
+        return False
+    if not POEM_OF_DAY_MIN_WORDS <= excerpt.word_count <= POEM_OF_DAY_MAX_WORDS:
+        return False
+
+    title_context = " ".join(
+        part
+        for part in [
+            excerpt.title,
+            excerpt.work_title,
+            excerpt.section_title or "",
+        ]
+        if part
+    ).lower()
+    metadata_context = " ".join(
+        [
+            title_context,
+            " ".join(excerpt.subjects),
+            " ".join(label.get("label", "") for label in excerpt.labels),
+        ]
+    ).lower()
+    if any(term in metadata_context for term in EPIC_POEM_OF_DAY_TERMS):
+        return False
+    return not EPIC_SECTION_TITLE_RE.search(title_context)
 
 
 def daily_rank_key(day: str, excerpt: ProcessedExcerpt) -> str:

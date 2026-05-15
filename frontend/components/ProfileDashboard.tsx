@@ -22,6 +22,7 @@ export function ProfileDashboard() {
   const [followedActivity, setFollowedActivity] = useState<AccountActivityItem[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [signedOut, setSignedOut] = useState(false);
+  const [accountFormVersion, setAccountFormVersion] = useState(0);
 
   useEffect(() => {
     let mounted = true;
@@ -84,6 +85,7 @@ export function ProfileDashboard() {
     setFollowedAuthors([]);
     setFollowedActivity([]);
     setSignedOut(true);
+    setAccountFormVersion((version) => version + 1);
   }
 
   if (!loaded) {
@@ -122,6 +124,7 @@ export function ProfileDashboard() {
       {user ? <FollowedAuthors authors={followedAuthors} /> : null}
       <AccountPreferencesForm
         compact={false}
+        key={accountFormVersion}
         onAccountChange={(account) => {
           setUser(account);
           setSignedOut(false);
